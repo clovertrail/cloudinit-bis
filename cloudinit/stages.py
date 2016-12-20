@@ -632,7 +632,10 @@ class Init(object):
                 return (None, loc)
             if ncfg:
                 return (ncfg, loc)
-        return (net.generate_fallback_config(), "fallback")
+        if util.is_FreeBSD():
+            return (net.generate_fallback_config_freebsd(), "fallback")
+        else:
+            return (net.generate_fallback_config(), "fallback")
 
     def apply_network_config(self, bring_up):
         netcfg, src = self._find_networking_config()

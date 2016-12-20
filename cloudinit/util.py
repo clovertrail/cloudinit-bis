@@ -577,6 +577,10 @@ def is_ipv4(instr):
     return len(toks) == 4
 
 
+def is_FreeBSD():
+    return system_info()['platform'].startswith('FreeBSD')
+
+
 def get_cfg_option_bool(yobj, key, default=False):
     if key not in yobj:
         return default
@@ -2140,6 +2144,21 @@ def get_mount_info(path, log=LOG):
     #
     # So use /proc/$$/mountinfo to find the device underlying the
     # input path.
+    if is_FreeBSD():
+        (result, err) = subp(['mount', '-p', path], rcs = [0, 1])
+        ret=result.split()
+        label_part = ret[0]
+        if label_part.startswith("/dev/label/"):
+            target_label = label_part[5:]
+            (label_part, err) = subp(['glabel', 'status', '-s'], rcs = [0, 1])
+            for labels in label_part.split("\n"):
+                items = labels.split()
+                if len(items) > 0 and items[0].startswith(target_label):
+                    label_part = items[2]
+                    break
+            label_part = str(label_part)
+        return "/dev/" + label_part, ret[2], ret[1]
+
     mountinfo_path = '/proc/%s/mountinfo' % os.getpid()
     if os.path.exists(mountinfo_path):
         lines = load_file(mountinfo_path).splitlines()
@@ -2342,6 +2361,12 @@ def _call_dmidecode(key, dmidecode_path):
         return None
 
 
+def read_dmi_data_FreeBSD(key):
+    (content, _err) = subp(["dmidecode", "-s", key], rcs = [0, 1])
+    uuid = str(content.strip())
+    return uuid
+
+
 def read_dmi_data(key):
     """
     Wrapper for reading DMI data.
@@ -2355,6 +2380,9 @@ def read_dmi_data(key):
 
     If all of the above fail to find a value, None will be returned.
     """
+
+    if is_FreeBSD():
+        return read_dmi_data_FreeBSD(key)
 
     syspath_value = _read_dmi_syspath(key)
     if syspath_value is not None:

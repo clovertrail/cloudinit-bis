@@ -234,7 +234,11 @@ class WALinuxAgentShim(object):
         content = util.load_file(fallback_lease_file)
         LOG.debug("content is %s", content)
         for line in content.splitlines():
-            if 'unknown-245' in line:
+            if util.is_FreeBSD():
+                azure_endpoint = "option-245"
+            else:
+                azure_endpoint = "unknown-245"
+            if azure_endpoint in line:
                 # Example line from Ubuntu
                 # option unknown-245 a8:3f:81:10;
                 leases.append(line.strip(' ').split(' ', 2)[-1].strip(';\n"'))

@@ -45,6 +45,20 @@ BOUNCE_COMMAND = [
 # ensures that it gets linked to this path.
 RESOURCE_DISK_PATH = '/dev/disk/cloud/azure_resource'
 
+FREEBSD_BUILTIN_DS_CONFIG = {
+    'agent_command': AGENT_START_BUILTIN,
+    'data_dir': "/var/lib/waagent",
+    'set_hostname': True,
+    'hostname_bounce': {
+        'interface': 'hn0',
+        'policy': True,
+        'command': BOUNCE_COMMAND,
+        'hostname_command': 'hostname',
+    },
+    'disk_aliases': {'ephemeral0': RESOURCE_DISK_PATH},
+    'dhclient_lease_file': '/var/db/dhclient.leases.hn0',
+}
+
 BUILTIN_DS_CONFIG = {
     'agent_command': AGENT_START_BUILTIN,
     'data_dir': "/var/lib/waagent",
@@ -57,6 +71,17 @@ BUILTIN_DS_CONFIG = {
     },
     'disk_aliases': {'ephemeral0': RESOURCE_DISK_PATH},
     'dhclient_lease_file': '/var/lib/dhcp/dhclient.eth0.leases',
+}
+
+FREEBSD_BUILTIN_CLOUD_CONFIG = {
+    'disk_setup': {
+        'ephemeral0': {'table_type': 'gpt',
+                       'layout': [100],
+                       'overwrite': True},
+    },
+    'fs_setup': [{'filesystem': 'freebsd-ufs',
+                  'device': 'ephemeral0.1',
+                  'replace_fs': 'ntfs'}],
 }
 
 BUILTIN_CLOUD_CONFIG = {
@@ -114,9 +139,14 @@ class DataSourceAzureNet(sources.DataSource):
         self.seed_dir = os.path.join(paths.seed_dir, 'azure')
         self.cfg = {}
         self.seed = None
+        buildin_ds_config = None
+        if util.is_FreeBSD():
+            buildin_ds_config = FREEBSD_BUILTIN_DS_CONFIG
+        else:
+            buildin_ds_config = BUILTIN_DS_CONFIG
         self.ds_cfg = util.mergemanydict([
             util.get_cfg_by_path(sys_cfg, DS_CFG_PATH, {}),
-            BUILTIN_DS_CONFIG])
+            buildin_ds_config])
         self.dhclient_lease_file = self.ds_cfg.get('dhclient_lease_file')
 
     def __str__(self):
@@ -205,7 +235,10 @@ class DataSourceAzureNet(sources.DataSource):
             (md, self.userdata_raw, cfg, files) = ret
             self.seed = cdev
             self.metadata = util.mergemanydict([md, DEFAULT_METADATA])
-            self.cfg = util.mergemanydict([cfg, BUILTIN_CLOUD_CONFIG])
+            if util.is_FreeBSD():
+                self.cfg = util.mergemanydict([cfg, FREEBSD_BUILTIN_CLOUD_CONFIG])
+            else:
+                self.cfg = util.mergemanydict([cfg, BUILTIN_CLOUD_CONFIG])
             found = cdev
 
             LOG.debug("found datasource in %s", cdev)
@@ -218,8 +251,12 @@ class DataSourceAzureNet(sources.DataSource):
             LOG.debug("using files cached in %s", ddir)
 
         # azure / hyper-v provides random data here
-        seed = util.load_file("/sys/firmware/acpi/tables/OEM0",
-                              quiet=True, decode=False)
+        if not util.is_FreeBSD():
+            seed = util.load_file("/sys/firmware/acpi/tables/OEM0",
+                                  quiet=True, decode=False)
+            if seed:
+                self.metadata['random_seed'] = seed
+        ## TODO.
         if seed:
             self.metadata['random_seed'] = seed
 
@@ -321,6 +358,7 @@ def can_dev_be_reformatted(devpath):
     return True, bmsg + ' and had no important files. Safe for reformatting.'
 
 
+## TODO. There is no RESOURECE_DISK_PATH on FREEBSD
 def address_ephemeral_resize(devpath=RESOURCE_DISK_PATH, maxwait=120,
                              is_new_instance=False):
     # wait for ephemeral disk to come up
@@ -631,8 +669,18 @@ def encrypt_pass(password, salt_id="$6$"):
 def list_possible_azure_ds_devs():
     # return a sorted list of devices that might have a azure datasource
     devlist = []
-    for fstype in ("iso9660", "udf"):
-        devlist.extend(util.find_devs_with("TYPE=%s" % fstype))
+    if util.is_FreeBSD():
+        cdrom_dev = "/dev/cd0"
+        (out, err) = util.subp(["mount", "-t", "cd9660", cdrom_dev,
+            "/mnt/cdrom/secure"], rcs=[0, 1])
+        if len(err):
+            LOG.info("Fail to mount cd")
+        else:
+            util.subp(["umount", "/mnt/cdrom/secure"])
+            devlist.extend(cdrom_dev)
+    else:
+        for fstype in ("iso9660", "udf"):
+            devlist.extend(util.find_devs_with("TYPE=%s" % fstype))
 
     devlist.sort(reverse=True)
     return devlist

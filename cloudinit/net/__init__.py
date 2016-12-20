@@ -26,7 +26,7 @@ from cloudinit import util
 LOG = logging.getLogger(__name__)
 SYS_CLASS_NET = "/sys/class/net/"
 DEFAULT_PRIMARY_INTERFACE = 'eth0'
-
+DEFAULT_PRIMARY_INTERFACE_FREEBSD = 'hn0'
 
 def sys_dev_path(devname, path=""):
     return SYS_CLASS_NET + devname + "/" + path
@@ -47,6 +47,7 @@ def read_sys_net(devname, path, translate=None,
             if on_einval is not None:
                 return on_einval(e)
         raise
+
     contents = contents.strip()
     if translate is None:
         return contents
@@ -85,8 +86,19 @@ def is_up(devname):
     # The linux kernel says to consider devices in 'unknown'
     # operstate as up for the purposes of network configuration. See
     # Documentation/networking/operstates.txt in the kernel source.
-    translate = {'up': True, 'unknown': True, 'down': False}
-    return read_sys_net_safe(devname, "operstate", translate=translate)
+    if util.is_FreeBSD():
+        (if_result, _err) = util.subp(['ifconfig', devname], rcs = [0, 1])
+        if len(_err):
+            return False
+        pat = "^" + devname
+        for item in if_result.split("\n"):
+            if re.match(pat, item):
+                flags = item.split('<')[1].split('>')[0]
+                if flags.find("UP") != -1:
+                    return True
+    else:
+        translate = {'up': True, 'unknown': True, 'down': False}
+        return read_sys_net_safe(devname, "operstate", translate=translate)
 
 
 def is_wireless(devname):
@@ -116,7 +128,11 @@ def is_present(devname):
 
 
 def get_devicelist():
-    return os.listdir(SYS_CLASS_NET)
+    if util.is_FreeBSD():
+        (nics, _err) = util.subp(['ifconfig', '-l'], rcs = [0, 1])
+        return nics.split()
+    else:
+        return os.listdir(SYS_CLASS_NET)
 
 
 class ParserError(Exception):
@@ -127,6 +143,50 @@ def is_disabled_cfg(cfg):
     if not cfg or not isinstance(cfg, dict):
         return False
     return cfg.get('config') == "disabled"
+
+
+def generate_fallback_config_freebsd():
+    (nics, _err) = util.subp(['ifconfig', '-l', 'ether'], rcs = [0, 1])
+    LOG.info("potential interfaces: %s", nics)
+    if len(_err):
+        LOG.info("Fail to get network interfaces")
+        return None
+    potential_interfaces = nics.split()
+    connected = []
+    for nic in potential_interfaces:
+        pat = "^" + nic
+        LOG.info("NIC: %s\n", nic)
+        (if_result, _err) = util.subp(['ifconfig', nic], rcs = [0, 1])
+        if len(_err):
+            continue
+        for item in if_result.split("\n"):
+            if re.match(pat, item):
+                flags = item.split('<')[1].split('>')[0]
+                if flags.find("RUNNING") != -1:
+                    connected.append(nic)
+    if connected:
+        potential_interfaces = connected
+    names = list(sorted(potential_interfaces))
+    default_pri_nic = DEFAULT_PRIMARY_INTERFACE_FREEBSD
+    if default_pri_nic in names:
+        names.remove(default_pri_nic)
+        names.insert(0, default_pri_nic)
+    target_name = None
+    target_mac = None
+    for name in names:
+        mac = get_interface_mac(name)
+        if mac:
+            target_name = name
+            target_mac = mac
+            break
+    if target_mac and target_name:
+        nconf = {'config': [], 'version': 1}
+        nconf['config'].append(
+            {'type': 'physical', 'name': target_name,
+             'mac_address': target_mac, 'subnets': [{'type': 'dhcp'}]})
+        return nconf
+    else:
+        return None
 
 
 def generate_fallback_config():
@@ -212,6 +272,28 @@ def apply_network_config_names(netcfg, strict_present=True, strict_busy=True):
     return _rename_interfaces(renames)
 
 
+def _get_ipv6_global_perm_interface_FreeBSD():
+    ipv6 = []
+    nics, _err = util.subp(['ifconfig', '-l'], rcs = [0, 1])
+    for nic in nics.split():
+        if_result, _err = util.subp(['ifconfig', nic], rcs = [0, 1])
+        for item in if_result.split("\n"):
+            if item.find("inet6 ") != -1 and item.find("scopeid") == -1:
+                ipv6.append(nic)
+    return ipv6
+
+def _get_ipv4_FreeBSD():
+    ipv4 = []
+    ip_pat = re.compile(r"\s+inet\s+inet\s+\d+[.]\d+[.]\d+[.]\d+")
+    nics, _err = util.subp(['ifconfig', '-l'], rcs = [0, 1])
+    for nic in nics.split():
+        if_result, _err = util.subp(['ifconfig', nic], rcs = [0, 1])
+        for item in if_result.split("\n"):
+            if ip_pat.match(item):
+                ipv4.append(nic)
+    return ipv4
+
+
 def _get_current_rename_info(check_downable=True):
     """Collect information necessary for rename_interfaces."""
     names = get_devicelist()
@@ -222,13 +304,21 @@ def _get_current_rename_info(check_downable=True):
 
     if check_downable:
         nmatch = re.compile(r"[0-9]+:\s+(\w+)[@:]")
-        ipv6, _err = util.subp(['ip', '-6', 'addr', 'show', 'permanent',
-                                'scope', 'global'], capture=True)
-        ipv4, _err = util.subp(['ip', '-4', 'addr', 'show'], capture=True)
-
         nics_with_addresses = set()
-        for bytes_out in (ipv6, ipv4):
-            nics_with_addresses.update(nmatch.findall(bytes_out))
+        if util.is_FreeBSD():
+            ipv6 = _get_ipv6_global_perm_interface_FreeBSD()
+            ipv4 = _get_ipv4_FreeBSD()
+            for bytes_out in (ipv6, ipv4):
+                for i in ipv6:
+                    nics_with_addresses.update(i)
+                for i in ipv4:
+                    nics_with_addresses.update(i)
+        else:
+            ipv6, _err = util.subp(['ip', '-6', 'addr', 'show', 'permanent',
+                                    'scope', 'global'], capture=True)
+            ipv4, _err = util.subp(['ip', '-4', 'addr', 'show'], capture=True)
+            for bytes_out in (ipv6, ipv4):
+                nics_with_addresses.update(nmatch.findall(bytes_out))
 
         for d in bymac.values():
             d['downable'] = (d['up'] is False or
@@ -349,12 +439,21 @@ def _rename_interfaces(renames, strict_present=True, strict_busy=True,
 
 def get_interface_mac(ifname):
     """Returns the string value of an interface's MAC Address"""
-    path = "address"
-    if os.path.isdir(sys_dev_path(ifname, "bonding_slave")):
-        # for a bond slave, get the nic's hwaddress, not the address it
-        # is using because its part of a bond.
-        path = "bonding_slave/perm_hwaddr"
-    return read_sys_net_safe(ifname, path)
+    if util.is_FreeBSD():
+        (if_result, _err) = util.subp(['ifconfig', ifname], rcs = [0, 1])
+        for item in if_result.split("\n"):
+            if item.find('ether ') != -1:
+                mac = str(item.split()[1])
+                if mac:
+                    return mac
+
+    else:
+        path = "address"
+        if os.path.isdir(sys_dev_path(ifname, "bonding_slave")):
+         # for a bond slave, get the nic's hwaddress, not the address it
+         # is using because its part of a bond.
+            path = "bonding_slave/perm_hwaddr"
+        return read_sys_net_safe(ifname, path)
 
 
 def get_interfaces_by_mac(devs=None):
