@@ -256,9 +256,7 @@ class DataSourceAzureNet(sources.DataSource):
                                   quiet=True, decode=False)
             if seed:
                 self.metadata['random_seed'] = seed
-        ## TODO.
-        if seed:
-            self.metadata['random_seed'] = seed
+        ## TODO for FREEBSD
 
         # now update ds_cfg to reflect contents pass in config
         user_ds_cfg = util.get_cfg_by_path(self.cfg, DS_CFG_PATH, {})
