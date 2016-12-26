@@ -2361,12 +2361,6 @@ def _call_dmidecode(key, dmidecode_path):
         return None
 
 
-def read_dmi_data_FreeBSD(key):
-    (content, _err) = subp(["dmidecode", "-s", key], rcs = [0, 1])
-    uuid = str(content.strip())
-    return uuid
-
-
 def read_dmi_data(key):
     """
     Wrapper for reading DMI data.
@@ -2381,9 +2375,6 @@ def read_dmi_data(key):
     If all of the above fail to find a value, None will be returned.
     """
 
-    if is_FreeBSD():
-        return read_dmi_data_FreeBSD(key)
-
     syspath_value = _read_dmi_syspath(key)
     if syspath_value is not None:
         return syspath_value
@@ -2392,7 +2383,8 @@ def read_dmi_data(key):
     uname_arch = os.uname()[4]
     if not (uname_arch == "x86_64" or
             (uname_arch.startswith("i") and uname_arch[2:] == "86") or
-            uname_arch == 'aarch64'):
+            uname_arch == 'aarch64' or
+            is_FreeBSD()):
         LOG.debug("dmidata is not supported on %s", uname_arch)
         return None
 
