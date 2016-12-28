@@ -241,7 +241,8 @@ class Distro(distros.Distro):
         ## We assume the password is always hashed
         passwd_val = kwargs.get('passwd', None)
         if passwd_val != None:
-            set_passwd_cmd = ['echo', passwd_val, '|', 'pw', 'usermod', '-H', '0']
+            passwd_val = "'" + passwd_val + "'"
+            set_passwd_cmd = ['echo', passwd_val, '|', 'pw', 'usermod', name, '-H', '0']
             LOG.debug("set passwd cmd [%s]", set_passwd_cmd)
             try:
                 util.subp(set_passwd_cmd)#, logstring=set_pass_log_cmd)
