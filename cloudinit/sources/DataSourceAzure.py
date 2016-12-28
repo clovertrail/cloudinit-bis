@@ -220,7 +220,10 @@ class DataSourceAzureNet(sources.DataSource):
         for cdev in candidates:
             try:
                 if cdev.startswith("/dev/"):
-                    ret = util.mount_cb(cdev, load_azure_ds_dir)
+                    if util.is_FreeBSD():
+                        ret = util.mount_cb(cdev, load_azure_ds_dir, data=None, rw=False, mtype="udf", sync=False)
+                    else:
+                        ret = util.mount_cb(cdev, load_azure_ds_dir)
                 else:
                     ret = load_azure_ds_dir(cdev)
 
@@ -669,13 +672,13 @@ def list_possible_azure_ds_devs():
     devlist = []
     if util.is_FreeBSD():
         cdrom_dev = "/dev/cd0"
-        (out, err) = util.subp(["mount", "-t", "cd9660", cdrom_dev,
+        (out, err) = util.subp(["mount", "-o", "ro", "-t", "udf", cdrom_dev,
             "/mnt/cdrom/secure"], rcs=[0, 1])
         if len(err):
             LOG.info("Fail to mount cd")
-        else:
-            util.subp(["umount", "/mnt/cdrom/secure"])
-            devlist.extend(cdrom_dev)
+            return devlist
+        util.subp(["umount", "/mnt/cdrom/secure"])
+        devlist.append(cdrom_dev)
     else:
         for fstype in ("iso9660", "udf"):
             devlist.extend(util.find_devs_with("TYPE=%s" % fstype))
