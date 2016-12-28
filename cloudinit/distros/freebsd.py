@@ -239,24 +239,17 @@ class Distro(distros.Distro):
             util.logexc(LOG, "Failed to create user %s", name)
             raise e
         ## We assume the password is always hashed
-        pw_set_passwd = ['|', 'pw', 'usermod', '-H', '0']
         set_pass_cmd = ['echo']
         set_pass_log_cmd = ['echo']
-        for key, val in kwargs.items():
-            if (key in redact_opts and val and
-                    isinstance(val, six.string_types)):
-                set_pass_cmd.extend([val])
-                set_pass_cmd.extend(pw_set_passwd)
-                set_pass_log_cmd.extend(['REDACTED'])
-                set_pass_log_cmd.extend(pw_set_passwd)
-                break
-        
-        LOG.debug("Set password for user %s", name)
-        try:
-            util.subp(set_pass_cmd, logstring=set_pass_log_cmd)
-        except Exception as e:
-            util.logexc(LOG, "Failed to set password for user %s", name)
-            raise e
+        passwd_val = kwargs.get('passwd', None)
+        if passwd_val != None:
+            set_pass_cmd = ['echo', passwd_val, '|', 'pw', 'usermod', '-H', '0']
+            try:
+                util.subp(set_pass_cmd)#, logstring=set_pass_log_cmd)
+            except Exception as e:
+                util.logexc(LOG, "Failed to set password for user %s", name)
+                raise e
+
 
     def set_passwd(self, user, passwd, hashed=False):
         cmd = ['pw', 'usermod', user]
