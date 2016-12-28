@@ -246,8 +246,11 @@ class Distro(distros.Distro):
             if (key in redact_opts and val and
                     isinstance(val, six.string_types)):
                 set_pass_cmd.extend([val])
+                set_pass_cmd.extend(pw_set_passwd)
                 set_pass_log_cmd.extend(['REDACTED'])
+                set_pass_log_cmd.extend(pw_set_passwd)
                 break
+        
         LOG.debug("Set password for user %s", name)
         try:
             util.subp(set_pass_cmd, logstring=set_pass_log_cmd)
