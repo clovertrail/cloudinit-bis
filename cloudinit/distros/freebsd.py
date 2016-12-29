@@ -241,11 +241,11 @@ class Distro(distros.Distro):
         ## We assume the password is always hashed
         passwd_val = kwargs.get('passwd', None)
         if passwd_val != None:
-            passwd_val = "'" + passwd_val + "'"
-            set_passwd_cmd = ['echo', passwd_val, '|', 'pw', 'usermod', name, '-H', '0']
-            LOG.debug("set passwd cmd [%s]", set_passwd_cmd)
+            passwd_pipe = "echo '" + passwd_val + "' | pw usermod " + name + " -H 0"
+            passwd_log = "echo 'REDACTED' | pw usermod " + name + " -H 0"
+            LOG.debug("set passwd cmd [%s]", passwd_pipe)
             try:
-                util.subp(set_passwd_cmd)#, logstring=set_pass_log_cmd)
+                util.subp(['sh', '-c', passwd_pipe], logstring=passwd_log)
             except Exception as e:
                 util.logexc(LOG, "Failed to set password for user %s", name)
                 raise e
