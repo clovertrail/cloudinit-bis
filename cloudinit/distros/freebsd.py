@@ -243,7 +243,6 @@ class Distro(distros.Distro):
         if passwd_val != None:
             passwd_pipe = "echo '" + passwd_val + "' | pw usermod " + name + " -H 0"
             passwd_log = "echo 'REDACTED' | pw usermod " + name + " -H 0"
-            LOG.debug("set passwd cmd [%s]", passwd_pipe)
             try:
                 util.subp(['sh', '-c', passwd_pipe], logstring=passwd_log)
             except Exception as e:
