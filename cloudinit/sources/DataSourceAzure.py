@@ -221,7 +221,8 @@ class DataSourceAzureNet(sources.DataSource):
             try:
                 if cdev.startswith("/dev/"):
                     if util.is_FreeBSD():
-                        ret = util.mount_cb(cdev, load_azure_ds_dir, data=None, rw=False, mtype="udf", sync=False)
+                        ret = util.mount_cb(cdev, load_azure_ds_dir,
+                                data=None, rw=False, mtype="udf", sync=False)
                     else:
                         ret = util.mount_cb(cdev, load_azure_ds_dir)
                 else:
