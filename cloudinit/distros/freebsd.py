@@ -251,17 +251,16 @@ class Distro(distros.Distro):
 
 
     def set_passwd(self, user, passwd, hashed=False):
-        cmd = ['pw', 'usermod', user]
+        passwd_pipe = "echo '" + passwd + "' | pw usermod " + user
 
         if hashed:
-            cmd.append('-H')
+            passwd_pipe = passwd_piep + " -H 0"
         else:
-            cmd.append('-h')
-
-        cmd.append('0')
+            passwd_pipe = passwd_piep + " -h 0"
 
         try:
-            util.subp(cmd, passwd, logstring="chpasswd for %s" % user)
+            util.subp(['sh', '-c', passwd_pipe],
+                      logstring="chpasswd for %s" % user)
         except Exception as e:
             util.logexc(LOG, "Failed to set password for %s", user)
             raise e
