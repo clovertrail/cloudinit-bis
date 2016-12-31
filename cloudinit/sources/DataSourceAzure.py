@@ -660,7 +660,7 @@ def read_azure_ovf(contents):
 
     if 'ssh_pwauth' not in cfg and password:
         cfg['ssh_pwauth'] = True
-
+    LOG.debug("ovf cfg: %s", cfg)
     return (md, ud, cfg)
 
 

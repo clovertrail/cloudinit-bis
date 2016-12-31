@@ -254,9 +254,9 @@ class Distro(distros.Distro):
         passwd_pipe = "echo '" + passwd + "' | pw usermod " + user
 
         if hashed:
-            passwd_pipe = passwd_piep + " -H 0"
+            passwd_pipe = passwd_pipe + " -H 0"
         else:
-            passwd_pipe = passwd_piep + " -h 0"
+            passwd_pipe = passwd_pipe + " -h 0"
 
         try:
             util.subp(['sh', '-c', passwd_pipe],
